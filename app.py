@@ -8,7 +8,17 @@ import streamlit as st
 
 import db
 
-st.set_page_config(page_title="My tasks", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="My tasks", layout="wide")
+st.markdown(
+    """
+<style>
+    [data-testid="stSidebar"] { display: none !important; }
+    [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+    [data-testid="collapsedControl"] { display: none !important; }
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
 
 def init():
@@ -113,6 +123,51 @@ def sync_open_task_from_query_params() -> None:
 
 def on_dialog_dismiss():
     st.session_state.dialog_task_id = None
+
+
+@st.dialog("New task", width="large")
+def new_task_dialog() -> None:
+    opts = db.status_options()
+    if not opts:
+        st.warning("Add at least one status under the **Statuses** tab first.")
+        if st.button("Close", key="new_task_close_no_status"):
+            st.rerun()
+        return
+    with st.form("new_task", clear_on_submit=True):
+        title = st.text_input("Title", max_chars=500)
+        description = st.text_area("Description (optional)", height=100)
+        status_labels = {sid: name for sid, name in opts}
+        status_id = st.selectbox(
+            "Initial status",
+            options=[x[0] for x in opts],
+            format_func=lambda i: status_labels[i],
+        )
+        due_new = st.date_input(
+            "Due date (optional)",
+            value=None,
+        )
+        priority_new = st.number_input(
+            "Priority (lower = listed first)",
+            value=5,
+            step=1,
+            min_value=0,
+            help="Tasks are sorted by this value ascending (0 before 5 before 10).",
+        )
+        submitted = st.form_submit_button("Create task", type="primary")
+        if submitted:
+            if not title or not title.strip():
+                st.error("Title is required.")
+            else:
+                due_str = due_new.isoformat() if due_new else None
+                tid = db.create_task(
+                    title,
+                    description,
+                    status_id,
+                    due_str,
+                    priority=int(priority_new),
+                )
+                st.session_state.open_dialog_for_task = tid
+                st.rerun()
 
 
 @st.dialog("Task details", width="large", on_dismiss=on_dialog_dismiss)
@@ -230,58 +285,20 @@ def task_detail_modal(task_id: int):
 init()
 sync_open_task_from_query_params()
 
-st.title("Task tracker")
+ht_left, ht_right = st.columns([4, 1], vertical_alignment="center")
+with ht_left:
+    st.title("Task tracker")
+with ht_right:
+    if st.button("New task", type="primary", use_container_width=True, key="open_new_task"):
+        new_task_dialog()
 
 tab_tasks, tab_statuses = st.tabs(["Tasks", "Statuses"])
-
-# --- Sidebar: new task ---
-with st.sidebar:
-    st.header("New task")
-    opts = db.status_options()
-    if not opts:
-        st.warning("Add at least one status under the **Statuses** tab.")
-    else:
-        with st.form("new_task", clear_on_submit=True):
-            title = st.text_input("Title", max_chars=500)
-            description = st.text_area("Description (optional)", height=100)
-            status_labels = {sid: name for sid, name in opts}
-            status_id = st.selectbox(
-                "Initial status",
-                options=[x[0] for x in opts],
-                format_func=lambda i: status_labels[i],
-            )
-            due_new = st.date_input(
-                "Due date (optional)",
-                value=None,
-            )
-            priority_new = st.number_input(
-                "Priority (lower = listed first)",
-                value=5,
-                step=1,
-                min_value=0,
-                help="Tasks are sorted by this value ascending (0 before 5 before 10).",
-            )
-            submitted = st.form_submit_button("Create task")
-            if submitted:
-                if not title or not title.strip():
-                    st.error("Title is required.")
-                else:
-                    due_str = due_new.isoformat() if due_new else None
-                    tid = db.create_task(
-                        title,
-                        description,
-                        status_id,
-                        due_str,
-                        priority=int(priority_new),
-                    )
-                    st.session_state.open_dialog_for_task = tid
-                    st.rerun()
 
 # --- Tab Tasks ---
 with tab_tasks:
     tasks = db.list_tasks()
     if not tasks:
-        st.info("No tasks yet. Create one from the sidebar.")
+        st.info("No tasks yet. Use **New task** above to add one.")
     else:
         st.subheader("Task list")
         st.caption(
