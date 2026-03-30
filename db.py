@@ -52,8 +52,29 @@ def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS general_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                body TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS note_tags (
+                note_id INTEGER NOT NULL REFERENCES general_notes(id) ON DELETE CASCADE,
+                tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                PRIMARY KEY (note_id, tag_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status_id);
             CREATE INDEX IF NOT EXISTS idx_comments_task ON comments(task_id);
+            CREATE INDEX IF NOT EXISTS idx_general_notes_created ON general_notes(created_at);
+            CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag_id);
+            CREATE INDEX IF NOT EXISTS idx_note_tags_note ON note_tags(note_id);
             """
         )
         cur = conn.execute("SELECT COUNT(*) FROM statuses")
@@ -234,3 +255,111 @@ def add_comment(task_id: int, body: str) -> int:
             (task_id, body.strip()),
         )
         return int(cur.lastrowid)
+
+
+# --- Tags (for general notes) ---
+
+
+def list_tags():
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, name, created_at FROM tags
+            ORDER BY name COLLATE NOCASE
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def add_tag(name: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO tags (name) VALUES (?)",
+            (name.strip(),),
+        )
+        return int(cur.lastrowid)
+
+
+def delete_tag(tag_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM note_tags WHERE tag_id = ?", (tag_id,))
+        conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+
+
+# --- General notes (not tied to tasks) ---
+
+
+def list_general_notes(filter_tag_id: int | None = None):
+    """Newest note first. Each dict includes ``tags``: list of {id, name}."""
+    with get_conn() as conn:
+        if filter_tag_id is None:
+            rows = conn.execute(
+                """
+                SELECT id, body, created_at FROM general_notes
+                ORDER BY created_at DESC, id DESC
+                """
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT n.id, n.body, n.created_at
+                FROM general_notes n
+                JOIN note_tags nt ON nt.note_id = n.id AND nt.tag_id = ?
+                ORDER BY n.created_at DESC, n.id DESC
+                """,
+                (int(filter_tag_id),),
+            ).fetchall()
+        notes = [dict(r) for r in rows]
+        if not notes:
+            return notes
+        ids = [n["id"] for n in notes]
+        ph = ",".join("?" * len(ids))
+        trows = conn.execute(
+            f"""
+            SELECT nt.note_id, t.id AS tag_id, t.name AS tag_name
+            FROM note_tags nt
+            JOIN tags t ON t.id = nt.tag_id
+            WHERE nt.note_id IN ({ph})
+            ORDER BY t.name COLLATE NOCASE
+            """,
+            ids,
+        ).fetchall()
+        by_note: dict[int, list[dict]] = {}
+        for r in trows:
+            by_note.setdefault(r["note_id"], []).append(
+                {"id": r["tag_id"], "name": r["tag_name"]}
+            )
+        for n in notes:
+            n["tags"] = by_note.get(n["id"], [])
+        return notes
+
+
+def add_general_note(body: str, tag_ids: list[int] | None = None) -> int:
+    tag_ids = tag_ids or []
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO general_notes (body) VALUES (?)",
+            (body.strip(),),
+        )
+        nid = int(cur.lastrowid)
+        for tid in tag_ids:
+            conn.execute(
+                "INSERT INTO note_tags (note_id, tag_id) VALUES (?, ?)",
+                (nid, int(tid)),
+            )
+        return nid
+
+
+def set_note_tags(note_id: int, tag_ids: list[int]) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM note_tags WHERE note_id = ?", (note_id,))
+        for tid in tag_ids:
+            conn.execute(
+                "INSERT INTO note_tags (note_id, tag_id) VALUES (?, ?)",
+                (note_id, int(tid)),
+            )
+
+
+def delete_general_note(note_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM general_notes WHERE id = ?", (note_id,))

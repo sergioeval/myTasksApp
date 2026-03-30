@@ -25,6 +25,8 @@ def init():
     db.init_db()
     if "dialog_task_id" not in st.session_state:
         st.session_state.dialog_task_id = None
+    if "general_tag_input_nonce" not in st.session_state:
+        st.session_state.general_tag_input_nonce = 0
 
 
 def fmt_ts(iso: str | None) -> str:
@@ -292,7 +294,7 @@ with ht_right:
     if st.button("New task", type="primary", use_container_width=True, key="open_new_task"):
         new_task_dialog()
 
-tab_tasks, tab_statuses = st.tabs(["Tasks", "Statuses"])
+tab_tasks, tab_statuses, tab_notes = st.tabs(["Tasks", "Statuses", "Notes"])
 
 # --- Tab Tasks ---
 with tab_tasks:
@@ -415,3 +417,121 @@ with tab_statuses:
                     st.error("That name already exists.")
             else:
                 st.warning("Enter a name.")
+
+# --- Tab General notes ---
+with tab_notes:
+    st.subheader("General notes")
+    st.caption(
+        "Notes are not tied to tasks. The **newest** note is on top. Use tags to organize; filter with the "
+        "dropdown. Tag names are case-insensitive (duplicates are not allowed)."
+    )
+
+    all_tags = db.list_tags()
+    tag_id_to_name = {t["id"]: t["name"] for t in all_tags}
+    tag_ids_options = [t["id"] for t in all_tags]
+
+    filter_options: list[int | None] = [None] + tag_ids_options
+    filter_tag_id = st.selectbox(
+        "Show notes tagged with",
+        options=filter_options,
+        format_func=lambda tid: "All notes" if tid is None else tag_id_to_name[tid],
+        key="notes_filter_by_tag",
+    )
+
+    with st.expander("Create and manage tags", expanded=False):
+        _tag_inp_key = f"inp_new_general_tag_{st.session_state.general_tag_input_nonce}"
+        ec1, ec2 = st.columns([3, 1], vertical_alignment="bottom")
+        with ec1:
+            st.text_input(
+                "New tag name",
+                key=_tag_inp_key,
+                placeholder="e.g. ideas, follow-up",
+            )
+        with ec2:
+            if st.button("Create tag", use_container_width=True, key="btn_create_general_tag"):
+                raw = (st.session_state.get(_tag_inp_key) or "").strip()
+                if raw:
+                    try:
+                        db.add_tag(raw)
+                        st.session_state.general_tag_input_nonce += 1
+                        st.rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("A tag with that name already exists.")
+                else:
+                    st.warning("Enter a tag name.")
+        if all_tags:
+            st.markdown("**Existing tags**")
+            for tg in all_tags:
+                gc1, gc2 = st.columns([4, 1], vertical_alignment="center")
+                with gc1:
+                    st.caption(tg["name"])
+                with gc2:
+                    if st.button("Delete", key=f"del_tag_{tg['id']}", type="secondary"):
+                        db.delete_tag(tg["id"])
+                        st.rerun()
+        else:
+            st.caption("No tags yet. Create one above.")
+
+    with st.form("add_general_note", clear_on_submit=True):
+        note_body = st.text_area(
+            "New note",
+            height=120,
+            placeholder="Write a general note…",
+        )
+        picked_tags = st.multiselect(
+            "Tags (optional)",
+            options=tag_ids_options,
+            format_func=lambda i: tag_id_to_name[i],
+            key="form_new_note_tag_pick",
+        )
+        if st.form_submit_button("Add note", type="primary"):
+            if note_body and note_body.strip():
+                db.add_general_note(note_body, tag_ids=picked_tags)
+                st.rerun()
+            else:
+                st.warning("Write something before adding.")
+
+    notes = db.list_general_notes(filter_tag_id=filter_tag_id)
+    if not notes:
+        if filter_tag_id is not None:
+            st.info("No notes with this tag. Choose **All notes** or pick another tag.")
+        else:
+            st.info("No general notes yet. Add one above.")
+    else:
+        for n in notes:
+            safe = html.escape(n["body"] or "").replace("\n", "<br/>")
+            tag_names = n.get("tags") or []
+            tags_html = ""
+            if tag_names:
+                joined = ", ".join(html.escape(t["name"]) for t in tag_names)
+                tags_html = (
+                    f'<div style="margin-top:0.4rem;font-size:0.85rem;color:#4b5563;">'
+                    f"<strong>Tags:</strong> {joined}</div>"
+                )
+            c1, c2 = st.columns([5, 1], vertical_alignment="center")
+            with c1:
+                st.markdown(
+                    f'<div style="background:#eef1f6;padding:0.85rem;border-radius:8px;margin-bottom:0.35rem;'
+                    f'border:1px solid #d8dee8;color:#111827;font-size:1rem;line-height:1.5;">'
+                    f'<small style="color:#374151;font-weight:600;">{html.escape(fmt_ts(n["created_at"]))}</small><br/>'
+                    f'<span style="color:#0f172a;display:block;margin-top:0.35rem;">{safe}</span>{tags_html}</div>',
+                    unsafe_allow_html=True,
+                )
+                ms_key = f"edit_note_tags_{n['id']}"
+                cur_tag_ids = [t["id"] for t in (n.get("tags") or [])]
+                st.multiselect(
+                    "Update tags",
+                    options=tag_ids_options,
+                    default=cur_tag_ids,
+                    format_func=lambda i: tag_id_to_name[i],
+                    key=ms_key,
+                )
+                if st.button("Save tags", key=f"save_note_tags_{n['id']}"):
+                    db.set_note_tags(n["id"], list(st.session_state.get(ms_key, [])))
+                    if ms_key in st.session_state:
+                        del st.session_state[ms_key]
+                    st.rerun()
+            with c2:
+                if st.button("Delete", key=f"del_gen_note_{n['id']}", type="secondary"):
+                    db.delete_general_note(n["id"])
+                    st.rerun()
