@@ -173,6 +173,47 @@ def new_task_dialog() -> None:
                 st.rerun()
 
 
+@st.dialog("Manage tags", width="large")
+def manage_general_tags_dialog() -> None:
+    st.caption("Create, review, and delete tags used to organize general notes.")
+
+    _tag_inp_key = f"inp_new_general_tag_{st.session_state.general_tag_input_nonce}"
+    ec1, ec2 = st.columns([3, 1], vertical_alignment="bottom")
+    with ec1:
+        st.text_input(
+            "New tag name",
+            key=_tag_inp_key,
+            placeholder="e.g. ideas, follow-up",
+        )
+    with ec2:
+        if st.button("Create tag", use_container_width=True, type="primary", key="btn_create_general_tag"):
+            raw = (st.session_state.get(_tag_inp_key) or "").strip()
+            if raw:
+                try:
+                    db.add_tag(raw)
+                    st.session_state.general_tag_input_nonce += 1
+                    st.rerun()
+                except sqlite3.IntegrityError:
+                    st.error("A tag with that name already exists.")
+            else:
+                st.warning("Enter a tag name.")
+
+    st.divider()
+    tags = db.list_tags()
+    if not tags:
+        st.caption("No tags yet.")
+    else:
+        st.markdown("**Existing tags**")
+        for tg in tags:
+            gc1, gc2 = st.columns([4, 1], vertical_alignment="center")
+            with gc1:
+                st.caption(tg["name"])
+            with gc2:
+                if st.button("Delete", key=f"dlg_del_tag_{tg['id']}", type="secondary"):
+                    db.delete_tag(tg["id"])
+                    st.rerun()
+
+
 @st.dialog("Task details", width="large", on_dismiss=on_dialog_dismiss)
 def task_detail_modal(task_id: int):
     task = db.get_task(task_id)
@@ -481,39 +522,10 @@ with tab_notes:
         key="notes_filter_by_tag",
     )
 
-    with st.expander("Create and manage tags", expanded=False):
-        _tag_inp_key = f"inp_new_general_tag_{st.session_state.general_tag_input_nonce}"
-        ec1, ec2 = st.columns([3, 1], vertical_alignment="bottom")
-        with ec1:
-            st.text_input(
-                "New tag name",
-                key=_tag_inp_key,
-                placeholder="e.g. ideas, follow-up",
-            )
-        with ec2:
-            if st.button("Create tag", use_container_width=True, key="btn_create_general_tag"):
-                raw = (st.session_state.get(_tag_inp_key) or "").strip()
-                if raw:
-                    try:
-                        db.add_tag(raw)
-                        st.session_state.general_tag_input_nonce += 1
-                        st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("A tag with that name already exists.")
-                else:
-                    st.warning("Enter a tag name.")
-        if all_tags:
-            st.markdown("**Existing tags**")
-            for tg in all_tags:
-                gc1, gc2 = st.columns([4, 1], vertical_alignment="center")
-                with gc1:
-                    st.caption(tg["name"])
-                with gc2:
-                    if st.button("Delete", key=f"del_tag_{tg['id']}", type="secondary"):
-                        db.delete_tag(tg["id"])
-                        st.rerun()
-        else:
-            st.caption("No tags yet. Create one above.")
+    c_manage, _ = st.columns([1, 4])
+    with c_manage:
+        if st.button("Manage tags", key="open_manage_tags", use_container_width=True):
+            manage_general_tags_dialog()
 
     with st.form("add_general_note", clear_on_submit=True):
         note_body = st.text_area(
