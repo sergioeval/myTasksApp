@@ -40,8 +40,13 @@ def set_logged_in(value: bool) -> None:
 
 
 def render_login_screen() -> None:
+    st.markdown(
+        "#### Welcome to **Task tracker**  \n"
+        "Sign in below to manage your tasks, statuses, and general notes in one place."
+    )
+    st.divider()
     st.title("Sign in")
-    st.caption("Enter your credentials to open the task tracker.")
+    st.caption("Enter your credentials to continue.")
     if not credentials_configured():
         st.error(
             "Authentication is not configured. Add `.streamlit/secrets.toml` with an `[auth]` "
