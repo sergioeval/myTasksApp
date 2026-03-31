@@ -1,6 +1,9 @@
 # Local SQLite DB for this app (created on first run via db.init_db)
 tasks.db
 
+# Streamlit secrets (copy from .streamlit/secrets.toml.example)
+.streamlit/secrets.toml
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

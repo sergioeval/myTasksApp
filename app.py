@@ -6,6 +6,7 @@ import sqlite3
 from datetime import date, datetime
 import streamlit as st
 
+import auth
 import db
 
 st.set_page_config(page_title="My tasks", layout="wide")
@@ -284,15 +285,22 @@ def task_detail_modal(task_id: int):
             st.rerun()
 
 
+if not auth.is_logged_in():
+    auth.render_login_screen()
+    st.stop()
+
 init()
 sync_open_task_from_query_params()
 
-ht_left, ht_right = st.columns([4, 1], vertical_alignment="center")
+ht_left, ht_mid, ht_right = st.columns([4, 1, 1], vertical_alignment="center")
 with ht_left:
     st.title("Task tracker")
-with ht_right:
+with ht_mid:
     if st.button("New task", type="primary", use_container_width=True, key="open_new_task"):
         new_task_dialog()
+with ht_right:
+    if st.button("Log out", use_container_width=True, key="logout_btn"):
+        auth.logout()
 
 tab_tasks, tab_statuses, tab_notes = st.tabs(["Tasks", "Statuses", "Notes"])
 
