@@ -329,6 +329,18 @@ div.st-key-status_cards .stButton > button {
     padding-bottom: 0.25rem !important;
     font-size: 0.95rem !important;
 }
+/* Hide expander chevron for status dropdowns (icon or text fallback like "_arrow_") */
+div.st-key-status_cards summary::-webkit-details-marker {
+    display: none !important;
+}
+div.st-key-status_cards summary::marker {
+    content: "" !important;
+}
+div.st-key-status_cards [data-testid="stExpanderToggleIcon"],
+div.st-key-status_cards summary svg,
+div.st-key-status_cards summary [aria-hidden="true"] {
+    display: none !important;
+}
 </style>
 """,
                 unsafe_allow_html=True,
