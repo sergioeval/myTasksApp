@@ -312,7 +312,7 @@ with tab_tasks:
     else:
         st.subheader("Task list")
         st.caption(
-            "Grouped by **status**. Open a status dropdown to see its tasks as cards. "
+            "Select a **status** to see its tasks as cards. "
             "Tasks are sorted by **priority** (lower number first). Click a **title** for details."
         )
 
@@ -328,18 +328,6 @@ div.st-key-status_cards .stButton > button {
     padding-top: 0.25rem !important;
     padding-bottom: 0.25rem !important;
     font-size: 0.95rem !important;
-}
-/* Hide expander chevron for status dropdowns (icon or text fallback like "_arrow_") */
-div.st-key-status_cards summary::-webkit-details-marker {
-    display: none !important;
-}
-div.st-key-status_cards summary::marker {
-    content: "" !important;
-}
-div.st-key-status_cards [data-testid="stExpanderToggleIcon"],
-div.st-key-status_cards summary svg,
-div.st-key-status_cards summary [aria-hidden="true"] {
-    display: none !important;
 }
 </style>
 """,
@@ -395,22 +383,29 @@ div.st-key-status_cards summary [aria-hidden="true"] {
 
             cards_per_row = 3
             with st.container(key="status_cards"):
-                for s in statuses:
-                    sid = s["id"]
-                    items = by_sid.get(sid, [])
-                    with st.expander(f"{s['name']} ({len(items)})", expanded=False):
-                        if not items:
-                            st.caption("No tasks in this status.")
-                            continue
-                        for start in range(0, len(items), cards_per_row):
-                            cols = st.columns(cards_per_row, gap="medium")
-                            chunk = items[start : start + cards_per_row]
-                            for i in range(cards_per_row):
-                                with cols[i]:
-                                    if i < len(chunk):
-                                        _task_card(chunk[i])
-                                    else:
-                                        st.markdown("<div style='height:0.1rem'></div>", unsafe_allow_html=True)
+                selected_sid = st.selectbox(
+                    "Status",
+                    options=status_ids_all,
+                    format_func=lambda sid: status_labels.get(sid, str(sid)),
+                    key="task_status_filter",
+                )
+                items = by_sid.get(selected_sid, [])
+                st.caption(f"{len(items)} task(s)")
+                if not items:
+                    st.info("No tasks in this status.")
+                else:
+                    for start in range(0, len(items), cards_per_row):
+                        cols = st.columns(cards_per_row, gap="medium")
+                        chunk = items[start : start + cards_per_row]
+                        for i in range(cards_per_row):
+                            with cols[i]:
+                                if i < len(chunk):
+                                    _task_card(chunk[i])
+                                else:
+                                    st.markdown(
+                                        "<div style='height:0.1rem'></div>",
+                                        unsafe_allow_html=True,
+                                    )
 
         forced_tid = st.session_state.pop("open_dialog_for_task", None)
         if forced_tid is not None and db.get_task(forced_tid):
