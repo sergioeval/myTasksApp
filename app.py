@@ -214,6 +214,54 @@ def manage_general_tags_dialog() -> None:
                     st.rerun()
 
 
+@st.dialog("Manage statuses", width="large")
+def manage_statuses_dialog() -> None:
+    st.caption("Add, rename, or delete statuses used by tasks.")
+
+    with st.form("dlg_add_status", clear_on_submit=True):
+        st.markdown("**Add status**")
+        name = st.text_input("New status name", placeholder="e.g. To do")
+        if st.form_submit_button("Add", type="primary"):
+            if name.strip():
+                try:
+                    db.add_status(name)
+                    st.rerun()
+                except sqlite3.IntegrityError:
+                    st.error("That name already exists.")
+            else:
+                st.warning("Enter a name.")
+
+    st.divider()
+    statuses = db.list_statuses()
+    if not statuses:
+        st.caption("No statuses yet.")
+        return
+
+    st.markdown("**Existing statuses**")
+    for s in statuses:
+        c1, c2, c3 = st.columns([3, 1, 1], vertical_alignment="center")
+        with c1:
+            new_name = st.text_input(
+                "Name",
+                value=s["name"],
+                key=f"dlg_sn_{s['id']}",
+                label_visibility="collapsed",
+            )
+        with c2:
+            if st.button("Save", key=f"dlg_save_s_{s['id']}"):
+                if new_name.strip():
+                    db.update_status_name(s["id"], new_name)
+                    st.rerun()
+                else:
+                    st.warning("Enter a name.")
+        with c3:
+            if st.button("Delete", key=f"dlg_del_s_{s['id']}", type="secondary"):
+                if db.delete_status(s["id"]):
+                    st.rerun()
+                else:
+                    st.error("Some tasks still use this status. Reassign them before deleting.")
+
+
 @st.dialog("Task details", width="large", on_dismiss=on_dialog_dismiss)
 def task_detail_modal(task_id: int):
     task = db.get_task(task_id)
@@ -343,15 +391,21 @@ with ht_right:
     if st.button("Log out", use_container_width=True, key="logout_btn"):
         auth.logout()
 
-tab_tasks, tab_statuses, tab_notes = st.tabs(["Tasks", "Statuses", "Notes"])
+tab_tasks, tab_notes = st.tabs(["Tasks", "Notes"])
 
 # --- Tab Tasks ---
 with tab_tasks:
+    cst1, cst2 = st.columns([4, 1], vertical_alignment="center")
+    with cst1:
+        st.subheader("Task list")
+    with cst2:
+        if st.button("Manage statuses", key="open_manage_statuses", use_container_width=True):
+            manage_statuses_dialog()
+
     tasks = db.list_tasks()
     if not tasks:
         st.info("No tasks yet. Use **New task** above to add one.")
     else:
-        st.subheader("Task list")
         st.caption(
             "Select a **status** to see its tasks as cards. "
             "Tasks are sorted by **priority** (lower number first). Click a **title** for details."
@@ -359,7 +413,7 @@ with tab_tasks:
 
         statuses = db.list_statuses()
         if not statuses:
-            st.warning("No statuses are configured. Add one under the **Statuses** tab.")
+            st.warning("No statuses are configured. Use **Manage statuses** to add one.")
         else:
             st.markdown(
                 """
@@ -458,49 +512,6 @@ div.st-key-status_cards .stButton > button {
                 task_detail_modal(dlg_id)
             else:
                 st.session_state.dialog_task_id = None
-
-# --- Tab Statuses ---
-with tab_statuses:
-    st.subheader("Statuses")
-    st.caption(
-        "Statuses are used when you create tasks and when you change status in the task details. "
-        "You cannot delete a status while any task is using it."
-    )
-
-    statuses = db.list_statuses()
-    for s in statuses:
-        c1, c2, c3 = st.columns([3, 1, 1])
-        with c1:
-            new_name = st.text_input(
-                "Name",
-                value=s["name"],
-                key=f"sn_{s['id']}",
-                label_visibility="collapsed",
-            )
-        with c2:
-            if st.button("Save", key=f"save_s_{s['id']}"):
-                if new_name.strip():
-                    db.update_status_name(s["id"], new_name)
-                    st.rerun()
-        with c3:
-            if st.button("Delete", key=f"del_s_{s['id']}"):
-                if db.delete_status(s["id"]):
-                    st.rerun()
-                else:
-                    st.error("Some tasks still use this status. Reassign them before deleting.")
-
-    with st.form("add_status"):
-        st.markdown("**Add status**")
-        name = st.text_input("New status name")
-        if st.form_submit_button("Add"):
-            if name.strip():
-                try:
-                    db.add_status(name)
-                    st.rerun()
-                except sqlite3.IntegrityError:
-                    st.error("That name already exists.")
-            else:
-                st.warning("Enter a name.")
 
 # --- Tab General notes ---
 with tab_notes:
