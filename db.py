@@ -63,6 +63,7 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS general_notes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL DEFAULT 'Untitled',
                 body TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -99,6 +100,11 @@ def init_db() -> None:
         if "priority" not in cols:
             conn.execute(
                 "ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 5"
+            )
+        note_cols = {r[1] for r in conn.execute("PRAGMA table_info(general_notes)").fetchall()}
+        if "title" not in note_cols:
+            conn.execute(
+                "ALTER TABLE general_notes ADD COLUMN title TEXT NOT NULL DEFAULT 'Untitled'"
             )
 
 
@@ -349,14 +355,14 @@ def list_general_notes(filter_tag_id: int | None = None):
         if filter_tag_id is None:
             rows = conn.execute(
                 """
-                SELECT id, body, created_at FROM general_notes
+                SELECT id, title, body, created_at FROM general_notes
                 ORDER BY created_at DESC, id DESC
                 """
             ).fetchall()
         else:
             rows = conn.execute(
                 """
-                SELECT DISTINCT n.id, n.body, n.created_at
+                SELECT DISTINCT n.id, n.title, n.body, n.created_at
                 FROM general_notes n
                 JOIN note_tags nt ON nt.note_id = n.id AND nt.tag_id = ?
                 ORDER BY n.created_at DESC, n.id DESC
@@ -388,12 +394,21 @@ def list_general_notes(filter_tag_id: int | None = None):
         return notes
 
 
-def add_general_note(body: str, tag_ids: list[int] | None = None) -> int:
+def get_general_note(note_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, title, body, created_at FROM general_notes WHERE id = ?",
+            (note_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def add_general_note(title: str, body: str, tag_ids: list[int] | None = None) -> int:
     tag_ids = tag_ids or []
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO general_notes (body) VALUES (?)",
-            (body.strip(),),
+            "INSERT INTO general_notes (title, body) VALUES (?, ?)",
+            ((title or "").strip() or "Untitled", body.strip()),
         )
         nid = int(cur.lastrowid)
         for tid in tag_ids:
@@ -402,6 +417,14 @@ def add_general_note(body: str, tag_ids: list[int] | None = None) -> int:
                 (nid, int(tid)),
             )
         return nid
+
+
+def update_general_note(note_id: int, title: str, body: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE general_notes SET title = ?, body = ? WHERE id = ?",
+            ((title or "").strip() or "Untitled", (body or "").strip(), note_id),
+        )
 
 
 def set_note_tags(note_id: int, tag_ids: list[int]) -> None:

@@ -407,6 +407,46 @@ def task_detail_modal(task_id: int):
             st.rerun()
 
 
+@st.dialog("Edit note", width="large")
+def edit_note_dialog(note_id: int) -> None:
+    note = db.get_general_note(note_id)
+    if not note:
+        st.error("This note no longer exists.")
+        if st.button("Close", key="note_close_missing"):
+            st.rerun()
+        return
+
+    all_tags = db.list_tags()
+    tag_id_to_name = {t["id"]: t["name"] for t in all_tags}
+    tag_ids_options = [t["id"] for t in all_tags]
+
+    # Get tags for this one note using list_general_notes() enrichment.
+    enriched = db.list_general_notes()
+    cur = next((n for n in enriched if n["id"] == note_id), None)
+    cur_tag_ids = [t["id"] for t in (cur.get("tags") if cur else [])] if cur else []
+
+    st.caption(f"Created: {fmt_ts(note.get('created_at'))} · ID `{note_id}`")
+
+    with st.form(f"edit_note_{note_id}"):
+        title = st.text_input("Title", value=note.get("title") or "Untitled", max_chars=200)
+        body = st.text_area("Body", value=note.get("body") or "", height=180)
+        tags = st.multiselect(
+            "Tags",
+            options=tag_ids_options,
+            default=cur_tag_ids,
+            format_func=lambda i: tag_id_to_name[i],
+        )
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            if st.form_submit_button("Save", type="primary", use_container_width=True):
+                db.update_general_note(note_id, title, body)
+                db.set_note_tags(note_id, list(tags))
+                st.rerun()
+        with c2:
+            if st.form_submit_button("Delete note", type="secondary", use_container_width=True):
+                db.delete_general_note(note_id)
+                st.rerun()
+
 if not auth.is_logged_in():
     auth.render_login_screen()
     st.stop()
@@ -572,8 +612,9 @@ with tab_notes:
             manage_general_tags_dialog()
 
     with st.form("add_general_note", clear_on_submit=True):
+        note_title = st.text_input("Title", max_chars=200, placeholder="e.g. Meeting notes")
         note_body = st.text_area(
-            "New note",
+            "Body",
             height=120,
             placeholder="Write a general note…",
         )
@@ -585,7 +626,7 @@ with tab_notes:
         )
         if st.form_submit_button("Add note", type="primary"):
             if note_body and note_body.strip():
-                db.add_general_note(note_body, tag_ids=picked_tags)
+                db.add_general_note(note_title, note_body, tag_ids=picked_tags)
                 st.rerun()
             else:
                 st.warning("Write something before adding.")
@@ -597,40 +638,35 @@ with tab_notes:
         else:
             st.info("No general notes yet. Add one above.")
     else:
-        for n in notes:
-            safe = html.escape(n["body"] or "").replace("\n", "<br/>")
-            tag_names = n.get("tags") or []
-            tags_html = ""
-            if tag_names:
-                joined = ", ".join(html.escape(t["name"]) for t in tag_names)
-                tags_html = (
-                    f'<div style="margin-top:0.4rem;font-size:0.85rem;color:#4b5563;">'
-                    f"<strong>Tags:</strong> {joined}</div>"
-                )
-            c1, c2 = st.columns([5, 1], vertical_alignment="center")
-            with c1:
-                st.markdown(
-                    f'<div style="background:#eef1f6;padding:0.85rem;border-radius:8px;margin-bottom:0.35rem;'
-                    f'border:1px solid #d8dee8;color:#111827;font-size:1rem;line-height:1.5;">'
-                    f'<small style="color:#374151;font-weight:600;">{html.escape(fmt_ts(n["created_at"]))}</small><br/>'
-                    f'<span style="color:#0f172a;display:block;margin-top:0.35rem;">{safe}</span>{tags_html}</div>',
-                    unsafe_allow_html=True,
-                )
-                ms_key = f"edit_note_tags_{n['id']}"
-                cur_tag_ids = [t["id"] for t in (n.get("tags") or [])]
-                st.multiselect(
-                    "Update tags",
-                    options=tag_ids_options,
-                    default=cur_tag_ids,
-                    format_func=lambda i: tag_id_to_name[i],
-                    key=ms_key,
-                )
-                if st.button("Save tags", key=f"save_note_tags_{n['id']}"):
-                    db.set_note_tags(n["id"], list(st.session_state.get(ms_key, [])))
-                    if ms_key in st.session_state:
-                        del st.session_state[ms_key]
-                    st.rerun()
-            with c2:
-                if st.button("Delete", key=f"del_gen_note_{n['id']}", type="secondary"):
-                    db.delete_general_note(n["id"])
-                    st.rerun()
+        cards_per_row = 3
+        for start in range(0, len(notes), cards_per_row):
+            cols = st.columns(cards_per_row, gap="medium")
+            chunk = notes[start : start + cards_per_row]
+            for i in range(cards_per_row):
+                with cols[i]:
+                    if i >= len(chunk):
+                        st.markdown("<div style='height:0.1rem'></div>", unsafe_allow_html=True)
+                        continue
+                    n = chunk[i]
+                    title = (n.get("title") or "").strip() or "Untitled"
+                    body_txt = truncate_for_list(n.get("body"), max_len=240)
+                    tag_names = n.get("tags") or []
+                    tags_line = ", ".join(t["name"] for t in tag_names) if tag_names else "—"
+
+                    with st.container(border=True):
+                        if st.button(
+                            title if len(title) <= 60 else title[:57] + "…",
+                            key=f"note_open_{n['id']}",
+                            type="tertiary",
+                            use_container_width=True,
+                            help=title,
+                        ):
+                            st.session_state.open_note_dialog_for = n["id"]
+                            st.rerun()
+                        st.caption(body_txt)
+                        st.caption(f"Tags: **{tags_line}**")
+                        st.caption(fmt_ts(n.get("created_at")))
+
+    forced_note = st.session_state.pop("open_note_dialog_for", None)
+    if forced_note is not None and db.get_general_note(forced_note):
+        edit_note_dialog(int(forced_note))
