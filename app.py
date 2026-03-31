@@ -312,65 +312,93 @@ with tab_tasks:
     else:
         st.subheader("Task list")
         st.caption(
-            "Tasks are sorted by **priority** (lower number first), then by last update. "
-            "Click a **title** for details. **Due in** uses today’s local date. "
-            "Descriptions are shortened here; open a task for the full text."
+            "Grouped by **status**. Open a status dropdown to see its tasks as cards. "
+            "Tasks are sorted by **priority** (lower number first). Click a **title** for details."
         )
 
-        # Tertiary title buttons (LinkColumn opens in a new tab in Streamlit).
-        st.markdown(
-            """
+        statuses = db.list_statuses()
+        if not statuses:
+            st.warning("No statuses are configured. Add one under the **Statuses** tab.")
+        else:
+            st.markdown(
+                """
 <style>
-div.st-key-task_list_table hr {
-    margin: 0.45rem 0 !important;
-}
-div.st-key-task_list_table .stButton > button {
+div.st-key-status_cards .stButton > button {
     min-height: 2.1rem !important;
-    padding-top: 0.3rem !important;
-    padding-bottom: 0.3rem !important;
-    font-size: 0.9rem !important;
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+    font-size: 0.95rem !important;
 }
 </style>
 """,
-            unsafe_allow_html=True,
-        )
-        col_weights = [0.98, 2.05, 3.05, 1.05, 1.05, 1.27]
-        with st.container(border=True, key="task_list_table", gap="xsmall"):
-            hdr = st.columns(col_weights, gap="small")
-            for i, lab in enumerate(
-                ("Priority", "Title", "Description", "Status", "Due", "Due in")
-            ):
-                with hdr[i]:
-                    _task_table_hdr(lab)
+                unsafe_allow_html=True,
+            )
 
-            st.divider()
+            status_ids_all = [s["id"] for s in statuses]
+            status_labels = {s["id"]: s["name"] for s in statuses}
 
-            for idx, t in enumerate(tasks):
-                row = st.columns(col_weights, gap="small", vertical_alignment="center")
-                with row[0]:
-                    _task_table_cell(str(int(t.get("priority", 5))))
-                with row[1]:
-                    ttl = (t["title"] or "").strip() or "—"
-                    btn_lbl = ttl if len(ttl) <= 54 else ttl[:51] + "…"
-                    if st.button(
-                        btn_lbl,
-                        type="tertiary",
-                        key=f"task_open_{t['id']}",
-                        help=ttl if btn_lbl != ttl else None,
-                        use_container_width=True,
-                    ):
-                        st.session_state.open_dialog_for_task = t["id"]
+            def _task_card(t: dict) -> None:
+                ttl = (t.get("title") or "").strip() or "—"
+                desc = truncate_for_list(t.get("description"), max_len=120)
+                pri = int(t.get("priority", 5))
+                due_s = fmt_due(t.get("due_date"))
+                due_in = fmt_days_until_due(t.get("due_date"))
+
+                with st.container(border=True):
+                    r1, r2 = st.columns([4, 1], vertical_alignment="center")
+                    with r1:
+                        btn_lbl = ttl if len(ttl) <= 52 else ttl[:49] + "…"
+                        if st.button(
+                            btn_lbl,
+                            type="tertiary",
+                            key=f"st_open_{t['id']}",
+                            help=ttl if btn_lbl != ttl else None,
+                            use_container_width=True,
+                        ):
+                            st.session_state.open_dialog_for_task = t["id"]
+                            st.rerun()
+                    with r2:
+                        st.markdown(f"**P{pri}**")
+
+                    st.caption(desc)
+                    st.caption(f"Due: **{due_s}** · **{due_in}**")
+
+                    cur_sid = t["status_id"]
+                    new_sid = st.selectbox(
+                        "Status",
+                        options=status_ids_all,
+                        index=status_ids_all.index(cur_sid) if cur_sid in status_ids_all else 0,
+                        format_func=lambda sid: status_labels.get(sid, str(sid)),
+                        key=f"st_move_{t['id']}",
+                        label_visibility="collapsed",
+                    )
+                    if new_sid != cur_sid:
+                        db.set_task_status(t["id"], int(new_sid))
                         st.rerun()
-                with row[2]:
-                    _task_table_cell(truncate_for_list(t.get("description"), max_len=88))
-                with row[3]:
-                    _task_table_cell(t["status_name"])
-                with row[4]:
-                    _task_table_cell(fmt_due(t.get("due_date")))
-                with row[5]:
-                    _task_table_cell(fmt_days_until_due(t.get("due_date")))
-                if idx < len(tasks) - 1:
-                    st.divider()
+
+            # Group tasks by status_id (preserve current ordering)
+            by_sid: dict[int, list[dict]] = {sid: [] for sid in status_ids_all}
+            for t in tasks:
+                by_sid.setdefault(t["status_id"], []).append(t)
+
+            cards_per_row = 3
+            with st.container(key="status_cards"):
+                for s in statuses:
+                    sid = s["id"]
+                    items = by_sid.get(sid, [])
+                    with st.expander(f"{s['name']} ({len(items)})", expanded=False):
+                        if not items:
+                            st.caption("No tasks in this status.")
+                            continue
+                        for start in range(0, len(items), cards_per_row):
+                            cols = st.columns(cards_per_row, gap="medium")
+                            chunk = items[start : start + cards_per_row]
+                            for i in range(cards_per_row):
+                                with cols[i]:
+                                    if i < len(chunk):
+                                        _task_card(chunk[i])
+                                    else:
+                                        st.markdown("<div style='height:0.1rem'></div>", unsafe_allow_html=True)
 
         forced_tid = st.session_state.pop("open_dialog_for_task", None)
         if forced_tid is not None and db.get_task(forced_tid):
