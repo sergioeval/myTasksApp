@@ -381,12 +381,9 @@ if not auth.is_logged_in():
 init()
 sync_open_task_from_query_params()
 
-ht_left, ht_mid, ht_right = st.columns([4, 1, 1], vertical_alignment="center")
+ht_left, ht_right = st.columns([5, 1], vertical_alignment="center")
 with ht_left:
     st.title("Task tracker")
-with ht_mid:
-    if st.button("New task", type="primary", use_container_width=True, key="open_new_task"):
-        new_task_dialog()
 with ht_right:
     if st.button("Log out", use_container_width=True, key="logout_btn"):
         auth.logout()
@@ -395,16 +392,19 @@ tab_tasks, tab_notes = st.tabs(["Tasks", "Notes"])
 
 # --- Tab Tasks ---
 with tab_tasks:
-    cst1, cst2 = st.columns([4, 1], vertical_alignment="center")
+    cst1, cst2, cst3 = st.columns([3, 1, 1], vertical_alignment="center")
     with cst1:
         st.subheader("Task list")
     with cst2:
+        if st.button("New task", type="primary", key="open_new_task", use_container_width=True):
+            new_task_dialog()
+    with cst3:
         if st.button("Manage statuses", key="open_manage_statuses", use_container_width=True):
             manage_statuses_dialog()
 
     tasks = db.list_tasks()
     if not tasks:
-        st.info("No tasks yet. Use **New task** above to add one.")
+        st.info("No tasks yet. Use **New task** to add one.")
     else:
         st.caption(
             "Select a **status** to see its tasks as cards. "
