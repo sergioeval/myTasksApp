@@ -52,6 +52,15 @@ def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS task_checklist_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                body TEXT NOT NULL,
+                is_done INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             CREATE TABLE IF NOT EXISTS general_notes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 body TEXT NOT NULL,
@@ -72,6 +81,7 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status_id);
             CREATE INDEX IF NOT EXISTS idx_comments_task ON comments(task_id);
+            CREATE INDEX IF NOT EXISTS idx_checklist_task ON task_checklist_items(task_id);
             CREATE INDEX IF NOT EXISTS idx_general_notes_created ON general_notes(created_at);
             CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag_id);
             CREATE INDEX IF NOT EXISTS idx_note_tags_note ON note_tags(note_id);
@@ -255,6 +265,50 @@ def add_comment(task_id: int, body: str) -> int:
             (task_id, body.strip()),
         )
         return int(cur.lastrowid)
+
+
+# --- Task checklist items ---
+
+
+def list_checklist_items(task_id: int):
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, task_id, body, is_done, sort_order, created_at
+            FROM task_checklist_items
+            WHERE task_id = ?
+            ORDER BY is_done ASC, sort_order ASC, id ASC
+            """,
+            (task_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def add_checklist_item(task_id: int, body: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO task_checklist_items (task_id, body, sort_order)
+            SELECT ?, ?, COALESCE(MAX(sort_order), -1) + 1
+            FROM task_checklist_items
+            WHERE task_id = ?
+            """,
+            (task_id, body.strip(), task_id),
+        )
+        return int(cur.lastrowid)
+
+
+def set_checklist_item_done(item_id: int, is_done: bool) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE task_checklist_items SET is_done = ? WHERE id = ?",
+            (1 if is_done else 0, item_id),
+        )
+
+
+def delete_checklist_item(item_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM task_checklist_items WHERE id = ?", (item_id,))
 
 
 # --- Tags (for general notes) ---

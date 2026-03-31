@@ -362,6 +362,39 @@ def task_detail_modal(task_id: int):
                 st.warning("Enter some text before posting.")
 
     st.divider()
+    st.markdown("**Checklist**")
+    items = db.list_checklist_items(task["id"])
+    if not items:
+        st.caption("No checklist items yet.")
+    else:
+        for it in items:
+            cc1, cc2 = st.columns([6, 1], vertical_alignment="center")
+            with cc1:
+                lbl = it["body"] or ""
+                checked = bool(it["is_done"])
+                new_checked = st.checkbox(
+                    lbl,
+                    value=checked,
+                    key=f"chk_item_{it['id']}",
+                )
+                if new_checked != checked:
+                    db.set_checklist_item_done(it["id"], new_checked)
+                    st.rerun()
+            with cc2:
+                if st.button("Delete", key=f"chk_del_{it['id']}", type="secondary"):
+                    db.delete_checklist_item(it["id"])
+                    st.rerun()
+
+    with st.form(f"dlg_add_checklist_{task_id}", clear_on_submit=True):
+        new_item = st.text_input("Add checklist item", placeholder="e.g. Call supplier…")
+        if st.form_submit_button("Add item"):
+            if new_item and new_item.strip():
+                db.add_checklist_item(task["id"], new_item)
+                st.rerun()
+            else:
+                st.warning("Enter an item before adding.")
+
+    st.divider()
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Close", use_container_width=True, key=f"dlg_close_{task_id}"):
