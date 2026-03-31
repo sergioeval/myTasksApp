@@ -551,6 +551,16 @@ div.st-key-status_cards .stButton > button {
 
             cards_per_row = 3
             with st.container(key="status_cards"):
+                # Small summary of counts per status
+                counts = {sid: len(by_sid.get(sid, [])) for sid in status_ids_all}
+                st.markdown("**Summary**")
+                sum_cols = st.columns(len(status_ids_all), gap="small")
+                for col, sid in zip(sum_cols, status_ids_all):
+                    with col:
+                        with st.container(border=True):
+                            st.caption(status_labels.get(sid, str(sid)))
+                            st.markdown(f"### {counts.get(sid, 0)}")
+
                 selected_sid = st.selectbox(
                     "Status",
                     options=status_ids_all,
