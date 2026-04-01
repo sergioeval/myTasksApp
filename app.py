@@ -340,14 +340,20 @@ def task_detail_modal(task_id: int):
         st.caption("No comments yet.")
     else:
         for c in comments:
-            safe = html.escape(c["body"] or "").replace("\n", "<br/>")
-            st.markdown(
-                f'<div style="background:#eef1f6;padding:0.85rem;border-radius:8px;margin-bottom:0.5rem;'
-                f'border:1px solid #d8dee8;color:#111827;font-size:1rem;line-height:1.5;">'
-                f'<small style="color:#374151;font-weight:600;">{html.escape(fmt_ts(c["created_at"]))}</small><br/>'
-                f'<span style="color:#0f172a;display:block;margin-top:0.35rem;">{safe}</span></div>',
-                unsafe_allow_html=True,
-            )
+            cc1, cc2 = st.columns([6, 1], vertical_alignment="center")
+            with cc1:
+                safe = html.escape(c["body"] or "").replace("\n", "<br/>")
+                st.markdown(
+                    f'<div style="background:#eef1f6;padding:0.85rem;border-radius:8px;margin-bottom:0.5rem;'
+                    f'border:1px solid #d8dee8;color:#111827;font-size:1rem;line-height:1.5;">'
+                    f'<small style="color:#374151;font-weight:600;">{html.escape(fmt_ts(c["created_at"]))}</small><br/>'
+                    f'<span style="color:#0f172a;display:block;margin-top:0.35rem;">{safe}</span></div>',
+                    unsafe_allow_html=True,
+                )
+            with cc2:
+                if st.button("Delete", key=f"cmt_del_{c['id']}", type="secondary"):
+                    db.delete_comment(int(c["id"]))
+                    st.rerun()
 
     with st.form(f"dlg_comment_{task_id}", clear_on_submit=True):
         body = st.text_area(

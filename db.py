@@ -363,6 +363,12 @@ def add_comment(task_id: int, body: str) -> int:
             return int(cur.fetchone()["id"])
 
 
+def delete_comment(comment_id: int) -> None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM comments WHERE id = %s", (comment_id,))
+
+
 # --- Task checklist items ---
 
 
