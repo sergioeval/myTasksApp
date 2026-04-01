@@ -8,6 +8,7 @@ import streamlit as st
 
 import auth
 import db
+import db_cache as dbc
 
 st.set_page_config(page_title="My tasks", layout="wide")
 st.markdown(
@@ -117,7 +118,7 @@ def sync_open_task_from_query_params() -> None:
         except KeyError:
             pass
         return
-    if db.get_task(tid):
+    if dbc.get_task(*dbc.cache_args(), tid):
         st.session_state.open_dialog_for_task = tid
     try:
         del st.query_params["open_task"]
@@ -131,7 +132,7 @@ def on_dialog_dismiss():
 
 @st.dialog("New task", width="large")
 def new_task_dialog() -> None:
-    opts = db.status_options()
+    opts = dbc.status_options(*dbc.cache_args())
     if not opts:
         st.warning("Add at least one status under the **Statuses** tab first.")
         if st.button("Close", key="new_task_close_no_status"):
@@ -171,6 +172,7 @@ def new_task_dialog() -> None:
                     priority=int(priority_new),
                 )
                 st.session_state.open_dialog_for_task = tid
+                dbc.bump_cache()
                 st.rerun()
 
 
@@ -193,6 +195,7 @@ def manage_general_tags_dialog() -> None:
                 try:
                     db.add_tag(raw)
                     st.session_state.general_tag_input_nonce += 1
+                    dbc.bump_cache()
                     st.rerun()
                 except psycopg2.IntegrityError:
                     st.error("A tag with that name already exists.")
@@ -200,7 +203,7 @@ def manage_general_tags_dialog() -> None:
                 st.warning("Enter a tag name.")
 
     st.divider()
-    tags = db.list_tags()
+    tags = dbc.list_tags(*dbc.cache_args())
     if not tags:
         st.caption("No tags yet.")
     else:
@@ -212,6 +215,7 @@ def manage_general_tags_dialog() -> None:
             with gc2:
                 if st.button("Delete", key=f"dlg_del_tag_{tg['id']}", type="secondary"):
                     db.delete_tag(tg["id"])
+                    dbc.bump_cache()
                     st.rerun()
 
 
@@ -226,6 +230,7 @@ def manage_statuses_dialog() -> None:
             if name.strip():
                 try:
                     db.add_status(name)
+                    dbc.bump_cache()
                     st.rerun()
                 except psycopg2.IntegrityError:
                     st.error("That name already exists.")
@@ -233,7 +238,7 @@ def manage_statuses_dialog() -> None:
                 st.warning("Enter a name.")
 
     st.divider()
-    statuses = db.list_statuses()
+    statuses = dbc.list_statuses(*dbc.cache_args())
     if not statuses:
         st.caption("No statuses yet.")
         return
@@ -252,12 +257,14 @@ def manage_statuses_dialog() -> None:
             if st.button("Save", key=f"dlg_save_s_{s['id']}"):
                 if new_name.strip():
                     db.update_status_name(s["id"], new_name)
+                    dbc.bump_cache()
                     st.rerun()
                 else:
                     st.warning("Enter a name.")
         with c3:
             if st.button("Delete", key=f"dlg_del_s_{s['id']}", type="secondary"):
                 if db.delete_status(s["id"]):
+                    dbc.bump_cache()
                     st.rerun()
                 else:
                     st.error("Some tasks still use this status. Reassign them before deleting.")
@@ -265,7 +272,7 @@ def manage_statuses_dialog() -> None:
 
 @st.dialog("Task details", width="large", on_dismiss=on_dialog_dismiss)
 def task_detail_modal(task_id: int):
-    task = db.get_task(task_id)
+    task = dbc.get_task(*dbc.cache_args(), task_id)
     if not task:
         st.error("This task no longer exists.")
         if st.button("Close", key="dlg_close_missing"):
@@ -281,7 +288,7 @@ def task_detail_modal(task_id: int):
         f"Created: {fmt_ts(task.get('created_at'))} · Due: **{due_disp}**"
     )
 
-    opts = db.status_options()
+    opts = dbc.status_options(*dbc.cache_args())
     if not opts:
         st.warning("No statuses are configured.")
     else:
@@ -297,6 +304,7 @@ def task_detail_modal(task_id: int):
         )
         if new_status != task["status_id"]:
             db.set_task_status(task["id"], new_status)
+            dbc.bump_cache()
             st.rerun()
 
     # Checkbox must live *outside* the form: widgets inside st.form do not rerun the script
@@ -331,11 +339,12 @@ def task_detail_modal(task_id: int):
         if st.form_submit_button("Save changes"):
             due_str = due_edit.isoformat() if use_due else None
             db.update_task_meta(task["id"], et, ed, due_str, priority=int(pr_edit))
+            dbc.bump_cache()
             st.rerun()
 
     st.divider()
     st.markdown("**Comments**")
-    comments = db.list_comments(task["id"])
+    comments = dbc.list_comments(*dbc.cache_args(), task["id"])
     if not comments:
         st.caption("No comments yet.")
     else:
@@ -353,6 +362,7 @@ def task_detail_modal(task_id: int):
             with cc2:
                 if st.button("Delete", key=f"cmt_del_{c['id']}", type="secondary"):
                     db.delete_comment(int(c["id"]))
+                    dbc.bump_cache()
                     st.rerun()
 
     with st.form(f"dlg_comment_{task_id}", clear_on_submit=True):
@@ -364,13 +374,14 @@ def task_detail_modal(task_id: int):
         if st.form_submit_button("Post comment"):
             if body and body.strip():
                 db.add_comment(task["id"], body)
+                dbc.bump_cache()
                 st.rerun()
             else:
                 st.warning("Enter some text before posting.")
 
     st.divider()
     st.markdown("**Checklist**")
-    items = db.list_checklist_items(task["id"])
+    items = dbc.list_checklist_items(*dbc.cache_args(), task["id"])
     if not items:
         st.caption("No checklist items yet.")
     else:
@@ -386,10 +397,12 @@ def task_detail_modal(task_id: int):
                 )
                 if new_checked != checked:
                     db.set_checklist_item_done(it["id"], new_checked)
+                    dbc.bump_cache()
                     st.rerun()
             with cc2:
                 if st.button("Delete", key=f"chk_del_{it['id']}", type="secondary"):
                     db.delete_checklist_item(it["id"])
+                    dbc.bump_cache()
                     st.rerun()
 
     with st.form(f"dlg_add_checklist_{task_id}", clear_on_submit=True):
@@ -397,6 +410,7 @@ def task_detail_modal(task_id: int):
         if st.form_submit_button("Add item"):
             if new_item and new_item.strip():
                 db.add_checklist_item(task["id"], new_item)
+                dbc.bump_cache()
                 st.rerun()
             else:
                 st.warning("Enter an item before adding.")
@@ -411,24 +425,25 @@ def task_detail_modal(task_id: int):
         if st.button("Delete task", type="secondary", use_container_width=True, key=f"dlg_del_{task_id}"):
             db.delete_task(task["id"])
             st.session_state.dialog_task_id = None
+            dbc.bump_cache()
             st.rerun()
 
 
 @st.dialog("Edit note", width="large")
 def edit_note_dialog(note_id: int) -> None:
-    note = db.get_general_note(note_id)
+    note = dbc.get_general_note(*dbc.cache_args(), note_id)
     if not note:
         st.error("This note no longer exists.")
         if st.button("Close", key="note_close_missing"):
             st.rerun()
         return
 
-    all_tags = db.list_tags()
+    all_tags = dbc.list_tags(*dbc.cache_args())
     tag_id_to_name = {t["id"]: t["name"] for t in all_tags}
     tag_ids_options = [t["id"] for t in all_tags]
 
     # Get tags for this one note using list_general_notes() enrichment.
-    enriched = db.list_general_notes()
+    enriched = dbc.list_general_notes(*dbc.cache_args(), None)
     cur = next((n for n in enriched if n["id"] == note_id), None)
     cur_tag_ids = [t["id"] for t in (cur.get("tags") if cur else [])] if cur else []
 
@@ -448,10 +463,12 @@ def edit_note_dialog(note_id: int) -> None:
             if st.form_submit_button("Save", type="primary", use_container_width=True):
                 db.update_general_note(note_id, title, body)
                 db.set_note_tags(note_id, list(tags))
+                dbc.bump_cache()
                 st.rerun()
         with c2:
             if st.form_submit_button("Delete note", type="secondary", use_container_width=True):
                 db.delete_general_note(note_id)
+                dbc.bump_cache()
                 st.rerun()
 
 if not auth.is_logged_in():
@@ -482,7 +499,7 @@ with tab_tasks:
         if st.button("Manage statuses", key="open_manage_statuses", use_container_width=True):
             manage_statuses_dialog()
 
-    tasks = db.list_tasks()
+    tasks = dbc.list_tasks(*dbc.cache_args())
     if not tasks:
         st.info("No tasks yet. Use **New task** to add one.")
     else:
@@ -491,7 +508,7 @@ with tab_tasks:
             "Tasks are sorted by **priority** (lower number first). Click a **title** for details."
         )
 
-        statuses = db.list_statuses()
+        statuses = dbc.list_statuses(*dbc.cache_args())
         if not statuses:
             st.warning("No statuses are configured. Use **Manage statuses** to add one.")
         else:
@@ -549,6 +566,7 @@ div.st-key-status_cards .stButton > button {
                     )
                     if new_sid != cur_sid:
                         db.set_task_status(t["id"], int(new_sid))
+                        dbc.bump_cache()
                         st.rerun()
 
             # Group tasks by status_id (preserve current ordering)
@@ -593,12 +611,12 @@ div.st-key-status_cards .stButton > button {
                                     )
 
         forced_tid = st.session_state.pop("open_dialog_for_task", None)
-        if forced_tid is not None and db.get_task(forced_tid):
+        if forced_tid is not None and dbc.get_task(*dbc.cache_args(), forced_tid):
             st.session_state.dialog_task_id = forced_tid
 
         dlg_id = st.session_state.dialog_task_id
         if dlg_id is not None:
-            if db.get_task(dlg_id):
+            if dbc.get_task(*dbc.cache_args(), dlg_id):
                 task_detail_modal(dlg_id)
             else:
                 st.session_state.dialog_task_id = None
@@ -611,7 +629,7 @@ with tab_notes:
         "dropdown. Tag names are case-insensitive (duplicates are not allowed)."
     )
 
-    all_tags = db.list_tags()
+    all_tags = dbc.list_tags(*dbc.cache_args())
     tag_id_to_name = {t["id"]: t["name"] for t in all_tags}
     tag_ids_options = [t["id"] for t in all_tags]
 
@@ -644,11 +662,12 @@ with tab_notes:
         if st.form_submit_button("Add note", type="primary"):
             if note_body and note_body.strip():
                 db.add_general_note(note_title, note_body, tag_ids=picked_tags)
+                dbc.bump_cache()
                 st.rerun()
             else:
                 st.warning("Write something before adding.")
 
-    notes = db.list_general_notes(filter_tag_id=filter_tag_id)
+    notes = dbc.list_general_notes(*dbc.cache_args(), filter_tag_id)
     if not notes:
         if filter_tag_id is not None:
             st.info("No notes with this tag. Choose **All notes** or pick another tag.")
@@ -685,5 +704,5 @@ with tab_notes:
                         st.caption(fmt_ts(n.get("created_at")))
 
     forced_note = st.session_state.pop("open_note_dialog_for", None)
-    if forced_note is not None and db.get_general_note(forced_note):
+    if forced_note is not None and dbc.get_general_note(*dbc.cache_args(), forced_note):
         edit_note_dialog(int(forced_note))
