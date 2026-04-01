@@ -2,7 +2,7 @@
 Task tracker: task list on the main view; details in a large modal dialog.
 """
 import html
-import sqlite3
+import psycopg2
 from datetime import date, datetime
 import streamlit as st
 
@@ -33,7 +33,8 @@ def init():
 def fmt_ts(iso: str | None) -> str:
     if not iso:
         return "—"
-    return iso.replace("T", " ").replace("Z", " UTC")
+    s = iso.isoformat() if hasattr(iso, "isoformat") else str(iso)
+    return s.replace("T", " ").replace("+00:00", " UTC").replace("Z", " UTC")
 
 
 def parse_iso_date(s: str | None):
@@ -193,7 +194,7 @@ def manage_general_tags_dialog() -> None:
                     db.add_tag(raw)
                     st.session_state.general_tag_input_nonce += 1
                     st.rerun()
-                except sqlite3.IntegrityError:
+                except psycopg2.IntegrityError:
                     st.error("A tag with that name already exists.")
             else:
                 st.warning("Enter a tag name.")
@@ -226,7 +227,7 @@ def manage_statuses_dialog() -> None:
                 try:
                     db.add_status(name)
                     st.rerun()
-                except sqlite3.IntegrityError:
+                except psycopg2.IntegrityError:
                     st.error("That name already exists.")
             else:
                 st.warning("Enter a name.")
