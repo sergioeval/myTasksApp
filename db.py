@@ -363,6 +363,15 @@ def add_comment(task_id: int, body: str) -> int:
             return int(cur.fetchone()["id"])
 
 
+def update_comment(comment_id: int, body: str) -> None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE comments SET body = %s WHERE id = %s",
+                (body.strip(), int(comment_id)),
+            )
+
+
 def delete_comment(comment_id: int) -> None:
     with get_conn() as conn:
         with conn.cursor() as cur:
