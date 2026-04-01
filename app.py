@@ -91,7 +91,7 @@ def _comment_textarea_height(
     min_px: int = 88,
     max_px: int = 1200,
 ) -> int:
-    """Pixel height so the comment box roughly fits the full text (wrap estimate)."""
+    """Pixel height so a multiline field roughly fits the full text (wrap estimate)."""
     t = (text or "").replace("\r\n", "\n")
     if not t:
         return min_px
@@ -336,12 +336,15 @@ def task_detail_modal(task_id: int):
     )
     due_default = parse_iso_date(task.get("due_date")) or date.today()
 
+    desc_key = f"dlg_desc_{task_id}"
     with st.form(f"dlg_edit_{task_id}"):
         et = st.text_input("Title", value=task["title"], max_chars=500)
+        desc_for_height = st.session_state.get(desc_key, task["description"] or "")
         ed = st.text_area(
             "Description",
             value=task["description"] or "",
-            height=140,
+            height=_comment_textarea_height(desc_for_height, chars_per_line=92),
+            key=desc_key,
         )
         pr_edit = st.number_input(
             "Priority (integer, lower = listed first)",
@@ -359,6 +362,8 @@ def task_detail_modal(task_id: int):
         if st.form_submit_button("Save changes"):
             due_str = due_edit.isoformat() if use_due else None
             db.update_task_meta(task["id"], et, ed, due_str, priority=int(pr_edit))
+            if desc_key in st.session_state:
+                del st.session_state[desc_key]
             dbc.bump_cache()
             st.rerun()
 
