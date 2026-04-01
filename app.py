@@ -82,6 +82,26 @@ def truncate_for_list(text: str | None, max_len: int = 100) -> str:
     return t[: max_len - 1] + "…"
 
 
+def _comment_textarea_height(
+    text: str | None,
+    *,
+    chars_per_line: int = 68,
+    line_px: int = 22,
+    padding_px: int = 48,
+    min_px: int = 88,
+    max_px: int = 1200,
+) -> int:
+    """Pixel height so the comment box roughly fits the full text (wrap estimate)."""
+    t = (text or "").replace("\r\n", "\n")
+    if not t:
+        return min_px
+    rows = 0
+    for line in t.split("\n"):
+        rows += max(1, (len(line) + chars_per_line - 1) // chars_per_line)
+    h = rows * line_px + padding_px
+    return int(max(min_px, min(h, max_px)))
+
+
 def _task_table_hdr(label: str) -> None:
     st.markdown(
         f'<p style="margin:0 0 0.15rem 0;font-size:0.85rem;line-height:1.35;font-weight:600;">'
@@ -351,12 +371,13 @@ def task_detail_modal(task_id: int):
         for c in comments:
             st.caption(fmt_ts(c["created_at"]))
             edit_key = f"cmt_edit_{task_id}_{c['id']}"
+            body_for_height = st.session_state.get(edit_key, c["body"] or "")
             cc1, cc2, cc3 = st.columns([5, 1, 1], vertical_alignment="top")
             with cc1:
                 st.text_area(
                     "Comment text",
                     value=c["body"] or "",
-                    height=100,
+                    height=_comment_textarea_height(body_for_height),
                     key=edit_key,
                     label_visibility="collapsed",
                 )
