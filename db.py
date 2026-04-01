@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from contextlib import contextmanager
 from typing import Any
 
@@ -46,16 +47,34 @@ def _postgres_config() -> dict[str, Any]:
 
 
 def _connect():
+    """Open a psycopg2 connection.
+
+    Supabase direct hostnames often resolve to IPv6 first; many networks have no
+    working IPv6 route ("Network is unreachable"). If an IPv4 address exists,
+    we connect via ``hostaddr`` but keep ``host`` for TLS server name validation.
+    """
     cfg = _postgres_config()
-    return psycopg2.connect(
-        host=cfg["host"],
-        port=cfg["port"],
+    host = cfg["host"]
+    port = cfg["port"]
+    kw = dict(
+        host=host,
+        port=port,
         dbname=cfg["database"],
         user=cfg["user"],
         password=cfg["password"],
         sslmode=cfg["sslmode"],
         cursor_factory=RealDictCursor,
     )
+    try:
+        infos = socket.getaddrinfo(
+            host, port, socket.AF_INET, socket.SOCK_STREAM
+        )
+    except socket.gaierror:
+        infos = []
+    if infos:
+        hostaddr = infos[0][4][0]
+        kw["hostaddr"] = hostaddr
+    return psycopg2.connect(**kw)
 
 
 @contextmanager
